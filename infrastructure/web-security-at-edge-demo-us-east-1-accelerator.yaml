@@ -295,7 +295,7 @@ Resources:
             Principal:
               Service: ec2.amazonaws.com
       Policies:
-        - PolicyName: WorkshopS3BucketAllowS3SyncPolicy
+        - PolicyName: AllowS3SyncPolicy
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
@@ -309,6 +309,16 @@ Resources:
                 Resource:
                   - !Sub '${WorkshopS3Bucket.Arn}'
                   - !Sub '${WorkshopS3Bucket.Arn}/*'
+        - PolicyName: AllowTargetGroupRegistration
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - elasticloadbalancing:RegisterTargets
+                  - elasticloadbalancing:DeregisterTargets
+                  - elasticloadbalancing:DescribeTargetHealth
+                Resource: '*'
       Tags:
         - Key: Name
           Value: WorkshopWebServerInstanceRole
@@ -333,17 +343,20 @@ Resources:
     Properties:
       HealthCheckIntervalSeconds: 30
       HealthCheckPath: /
+      HealthCheckPort: 80
       HealthCheckProtocol: HTTP
       HealthCheckTimeoutSeconds: 5
-      HealthyThresholdCount: 2
-      Name: WorkshopTargetGroup
+      HealthyThresholdCount: 5
+      UnhealthyThresholdCount: 2
+      Matcher:
+        HttpCode: 200
       Port: 80
       Protocol: HTTP
+      VpcId: !Ref VPC
+      TargetType: instance
       Tags:
         - Key: Name
           Value: WorkshopTargetGroup
-      UnhealthyThresholdCount: 2
-      VpcId: !Ref VPC
 
   WorkshopLoadBalancer:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
@@ -431,6 +444,16 @@ Resources:
           # Clean up
           rm -rf /tmp/temp.zip /tmp/git-source
 
+          # Fetch instance ID using IMDSv2
+          TOKEN=$(curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
+          INSTANCE_ID=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" -v http://169.254.169.254/latest/meta-data/instance-id)
+
+          # Retrieve target group ARN from CloudFormation parameter
+          TARGET_GROUP_ARN="${WorkshopTargetGroup}"
+
+          # Register the instance with the target group
+          aws elbv2 register-targets --target-group-arn $TARGET_GROUP_ARN --targets Id=$INSTANCE_ID
+
           # Signal the status from instance
           /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackId} --resource WorkshopWebserverInstance --region ${AWS::Region}
     CreationPolicy:
@@ -442,6 +465,7 @@ Resources:
       - WorkshopEc2InstanceConnectEndpoint
       - WorkshopS3Bucket
       - WorkshopNATGateway
+      - WorkshopTargetGroup
 
   WorkshopWebACL:
     Type: AWS::WAFv2::WebACL
@@ -468,6 +492,10 @@ Outputs:
   WorkshopS3WebsiteURL:
     Description: 'Workshop S3 Website URL'
     Value: !GetAtt WorkshopS3Bucket.WebsiteURL
+  WorkshopLoadBalancerDNSName:
+    Description: "The DNS name of the Workshop Load Balancer"
+    Value: !GetAtt WorkshopLoadBalancer.DNSName
+
 
 
   
