@@ -1,5 +1,11 @@
-AWSTemplateFormatVersion: 2010-09-09
+AWSTemplateFormatVersion: '2010-09-09'
 Description: Web security at edge workshop
+
+Parameters:
+  GitHubSourceUrl:
+    Type: String
+    Default: "https://github.com/ariel-tchougang/workshop-web-security-at-edge/archive/refs/heads/main.zip"
+    Description: "The URL to fetch the project sources from GitHub"
 
 Resources:
   VPC:
@@ -9,15 +15,15 @@ Resources:
       EnableDnsHostnames: true
       EnableDnsSupport: true
       Tags:
-      - Key: Name
-        Value: Workshop VPC
+        - Key: Name
+          Value: Workshop VPC
 
   InternetGateway:
     Type: AWS::EC2::InternetGateway
     Properties:
       Tags:
-      - Key: Name
-        Value: Workshop Internet Gateway
+        - Key: Name
+          Value: Workshop Internet Gateway
 
   AttachGateway:
     Type: AWS::EC2::VPCGatewayAttachment
@@ -109,8 +115,8 @@ Resources:
     Properties:
       VpcId: !Ref VPC
       Tags:
-      - Key: Name
-        Value: Workshop Private Route Table
+        - Key: Name
+          Value: Workshop Private Route Table
 
   PrivateSubnetRouteTableAssociation1:
     Type: AWS::EC2::SubnetRouteTableAssociation
@@ -123,6 +129,27 @@ Resources:
     Properties:
       SubnetId: !Ref PrivateSubnet2
       RouteTableId: !Ref PrivateRouteTable
+
+  EIPForNAT:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  WorkshopNATGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt EIPForNAT.AllocationId
+      SubnetId: !Ref PublicSubnet1
+      Tags:
+        - Key: Name
+          Value: Workshop NAT Gateway
+
+  PrivateRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref WorkshopNATGateway
   
   WorkshopS3Bucket:
     Type: AWS::S3::Bucket
@@ -132,11 +159,29 @@ Resources:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault:
               SSEAlgorithm: AES256
+      WebsiteConfiguration:
+        IndexDocument: index.html
       PublicAccessBlockConfiguration:
-        BlockPublicAcls: true
-        BlockPublicPolicy: true
-        IgnorePublicAcls: true
-        RestrictPublicBuckets: true
+        BlockPublicAcls: false
+        BlockPublicPolicy: false
+        IgnorePublicAcls: false
+        RestrictPublicBuckets: false
+      Tags:
+        - Key: Name
+          Value: Workshop S3 Bucket
+
+  WorkshopS3BucketPolicy:
+    Type: 'AWS::S3::BucketPolicy'
+    Properties:
+      Bucket: !Ref WorkshopS3Bucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowPublicReadAccess
+            Effect: Allow
+            Principal: '*'
+            Action: 's3:GetObject'
+            Resource: !Sub 'arn:aws:s3:::${WorkshopS3Bucket}/*'
   
   Ec2InstanceConnectSecurityGroup:
     Type: AWS::EC2::SecurityGroup
@@ -250,7 +295,7 @@ Resources:
             Principal:
               Service: ec2.amazonaws.com
       Policies:
-        - PolicyName: WorkshopS3BucketAllowS3SyncPolicy
+        - PolicyName: AllowS3SyncPolicy
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
@@ -264,6 +309,16 @@ Resources:
                 Resource:
                   - !Sub '${WorkshopS3Bucket.Arn}'
                   - !Sub '${WorkshopS3Bucket.Arn}/*'
+        - PolicyName: AllowTargetGroupRegistration
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - elasticloadbalancing:RegisterTargets
+                  - elasticloadbalancing:DeregisterTargets
+                  - elasticloadbalancing:DescribeTargetHealth
+                Resource: '*'
       Tags:
         - Key: Name
           Value: WorkshopWebServerInstanceRole
@@ -288,17 +343,20 @@ Resources:
     Properties:
       HealthCheckIntervalSeconds: 30
       HealthCheckPath: /
+      HealthCheckPort: 80
       HealthCheckProtocol: HTTP
       HealthCheckTimeoutSeconds: 5
-      HealthyThresholdCount: 2
-      Name: WorkshopTargetGroup
+      HealthyThresholdCount: 5
+      UnhealthyThresholdCount: 2
+      Matcher:
+        HttpCode: 200
       Port: 80
       Protocol: HTTP
+      VpcId: !Ref VPC
+      TargetType: instance
       Tags:
         - Key: Name
           Value: WorkshopTargetGroup
-      UnhealthyThresholdCount: 2
-      VpcId: !Ref VPC
 
   WorkshopLoadBalancer:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
@@ -352,7 +410,16 @@ Resources:
           # Install required packages
           echo "Install httpd"
           yum update -y
-          yum install -y httpd
+          yum install -y httpd unzip wget
+
+          # Define the GitHub source URL from CloudFormation parameter
+          GITHUB_SOURCE_URL="${GitHubSourceUrl}"
+
+          # Fetch the project sources from GitHub
+          wget -O /tmp/temp.zip $GITHUB_SOURCE_URL
+
+          # Unzip the content of temp.zip into /tmp/git-source
+          unzip /tmp/temp.zip -d /tmp/git-source
 
           # Start and enable the Apache service
           echo "Start and enable the Apache service"
@@ -364,54 +431,124 @@ Resources:
           chmod 2775 /var/www
           find /var/www -type d -exec chmod 2775 {} +
           find /var/www -type f -exec chmod 0664 {} +
+
+          # Move the contents of the extracted directory to /var/www/html
+          EXTRACTED_DIR=$(find /tmp/git-source -mindepth 1 -maxdepth 1 -type d)
+          mv $EXTRACTED_DIR/web/* /var/www/html/
           cd /var/www/html/
-          echo "<html><head><title>EC2 instance</title></head><body><h1><center>EC2 instance is running successfully!!</center></h1></body></html>" > /var/www/html/index.html
-          # /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackId} --resource WorkshopWebserverInstance --region ${AWS::Region}
-    # CreationPolicy:
-    #   ResourceSignal:
-    #     Timeout: PT30M
-    #     Count: 1
+
+          # Upload /var/www/html content to WorkshopS3Bucket
+          WORKSHOP_S3_BUCKET_NAME="${WorkshopS3Bucket}"
+          aws s3 sync /var/www/html s3://$WORKSHOP_S3_BUCKET_NAME --delete
+
+          # Clean up
+          rm -rf /tmp/temp.zip /tmp/git-source
+
+          # Fetch instance ID using IMDSv2
+          TOKEN=$(curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
+          INSTANCE_ID=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" -v http://169.254.169.254/latest/meta-data/instance-id)
+
+          # Retrieve target group ARN from CloudFormation parameter
+          TARGET_GROUP_ARN="${WorkshopTargetGroup}"
+
+          # Register the instance with the target group
+          aws elbv2 register-targets --target-group-arn $TARGET_GROUP_ARN --targets Id=$INSTANCE_ID
+
+          # Signal the status from instance
+          /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackId} --resource WorkshopWebserverInstance --region ${AWS::Region}
+    CreationPolicy:
+      ResourceSignal:
+        Timeout: PT15M
+        Count: 1
     DependsOn:
       - WorkshopWebServerInstanceProfile
+      - WorkshopEc2InstanceConnectEndpoint
+      - WorkshopS3Bucket
+      - WorkshopNATGateway
+      - WorkshopTargetGroup
 
-  WorkshopCloud9Instance:
-    Type: AWS::Cloud9::EnvironmentEC2
+  S3BucketCleanUpLambdaExecutionRole:
+    Type: 'AWS::IAM::Role'
     Properties:
-      AutomaticStopTimeMinutes: 60
-      ConnectionType: CONNECT_SSM
-      Description: Cloud9 instance for lab environment
-      ImageId: amazonlinux-2023-x86_64
-      InstanceType: t3.micro
-      Name: WorkshopCloud9Instance
-      SubnetId: !Ref PublicSubnet2
-    DependsOn:
-      - PublicSubnet2
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: 'lambda.amazonaws.com'
+            Action: 'sts:AssumeRole'
+      Policies:
+        - PolicyName: 'S3AccessPolicy'
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 's3:DeleteObject'
+                  - 's3:ListBucket'
+                Resource:
+                  - !Sub 'arn:aws:s3:::${WorkshopS3Bucket}'
+                  - !Sub 'arn:aws:s3:::${WorkshopS3Bucket}/*'
+              - Effect: Allow
+                Action: 'logs:*'
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - cloudformation:SignalResource
+                Resource: "*"
 
-  # WorkshopWebACL:
-  #   Type: AWS::WAFv2::WebACL
-  #   Properties:
-  #     Name: WorkshopWebACL
-  #     DefaultAction:
-  #       Allow: {}
-  #     Scope: CLOUDFRONT
-  #     VisibilityConfig:
-  #       CloudWatchMetricsEnabled: true
-  #       MetricName: WorkshopWebACLMetric
-  #       SampledRequestsEnabled: true
-  #     Tags:
-  #       - Key: Name
-  #         Value: WorkshopWebACL
+  S3BucketCleanUpLambda:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Handler: index.handler
+      Role: !GetAtt S3BucketCleanUpLambdaExecutionRole.Arn
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import cfnresponse
+
+          def handler(event, context):
+              s3 = boto3.client('s3')
+              bucket_name = event['ResourceProperties']['BucketName']
+
+              if event['RequestType'] == 'Delete':
+                  try:
+                      response = s3.list_objects_v2(Bucket=bucket_name)
+                      while 'Contents' in response:
+                          for obj in response['Contents']:
+                              s3.delete_object(Bucket=bucket_name, Key=obj['Key'])
+                          response = s3.list_objects_v2(Bucket=bucket_name)
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+                  except Exception as e:
+                      print(e)
+                      cfnresponse.send(event, context, cfnresponse.FAILED, {})
+              else:
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+
+      Runtime: python3.12
+      Timeout: 300
+
+  S3BucketCleanUpCustomResource:
+    Type: 'Custom::EmptyS3Bucket'
+    Properties:
+      ServiceToken: !GetAtt S3BucketCleanUpLambda.Arn
+      BucketName: !Ref WorkshopS3Bucket
 
 Outputs:
   WorkshopInstanceId:
     Description: The InstanceId of the newly created EC2 instance
     Value: !Ref WorkshopWebserverInstance
-  WorkshopCloud9InstanceId:
-    Description: The InstanceId of the Cloud9 instance
-    Value: !Ref WorkshopCloud9Instance
   WorkshopBucketName:
     Value: !Ref WorkshopS3Bucket
     Description: Name Workshop bucket
+  WorkshopS3WebsiteURL:
+    Description: 'Workshop S3 Website URL'
+    Value: !GetAtt WorkshopS3Bucket.WebsiteURL
+  WorkshopLoadBalancerDNSName:
+    Description: "The DNS name of the Workshop Load Balancer"
+    Value: !GetAtt WorkshopLoadBalancer.DNSName
+
 
 
   
