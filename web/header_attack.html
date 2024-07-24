@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Header Attacks Demo</title>
+    <link href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container mt-5">
+        <h1 class="text-center">Header Attacks</h1>
+        <form id="header-form" class="mt-5">
+            <div class="form-group">
+                <label for="header-name">Header Name</label>
+                <input type="text" class="form-control" id="header-name" placeholder="Enter header name">
+            </div>
+            <div class="form-group">
+                <label for="header-value">Header Value</label>
+                <input type="text" class="form-control" id="header-value" placeholder="Enter header value">
+            </div>
+            <button type="submit" class="btn btn-danger">Send</button>
+        </form>
+        <div id="header-result" class="mt-3"></div>
+        <div class="mt-5">
+            <a href="index.html" class="btn btn-secondary">Back to Home</a>
+        </div>
+    </div>
+    <script>
+        document.getElementById('header-form').addEventListener('submit', function (e) {
+            e.preventDefault();
+            const headerName = document.getElementById('header-name').value;
+            const headerValue = document.getElementById('header-value').value;
+            const resultsDiv = document.getElementById('header-result');
+            resultsDiv.innerHTML = '';
+
+            fetch(window.location.href, {
+                method: 'GET',
+                headers: {
+                    [headerName]: headerValue
+                }
+            }).then(response => {
+                if (response.status === 403) {
+                    return response.text().then(text => {
+                        const blockedByWAF = new Error(text);
+                        blockedByWAF.name = "blockedByWAF";
+                        throw blockedByWAF;
+                    });
+                }
+                
+                // Check if the decoded query contains a script tag and dynamically insert it
+                const scriptMatch = headerValue.match(/<script.*?>([\s\S]*?)<\/script>/i);
+                if (scriptMatch) {
+                    const scriptContent = scriptMatch[1];
+                    console.log('Script content:', scriptContent); // Debug log
+                    const scriptElement = document.createElement('script');
+                    scriptElement.textContent = scriptContent;
+                    resultsDiv.appendChild(scriptElement);
+                } else {
+                    resultsDiv.innerHTML = `<h2>Request sent with header ${headerName} and value ${headerValue}</h2>`;
+                }
+            }).catch(error => {
+                if (error.name === 'blockedByWAF') {
+                    document.documentElement.innerHTML = `${error.message}`;
+                } else {
+                    document.getElementById('header-result').innerHTML = `<h2>Error: ${error.message}</h2>`;
+                }
+            });
+        });
+    </script>
+</body>
+</html>

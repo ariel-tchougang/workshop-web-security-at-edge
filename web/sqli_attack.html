@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SQL Injection Demo</title>
+    <link href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.6.2/sql-wasm.js"></script>
+</head>
+<body>
+    <div class="container mt-5">
+        <h1 class="text-center">SQL Injection Demo</h1>
+        <form id="login-form" class="mt-5">
+            <div class="form-group">
+                <label for="username">Username</label>
+                <input type="text" class="form-control" id="username" placeholder="Enter username">
+            </div>
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="text" class="form-control" id="password" placeholder="Enter password">
+            </div>
+            <button type="submit" class="btn btn-primary" disabled>Login</button>
+        </form>
+        <div class="mt-3">
+            <p id="sql-query"></p>
+            <p id="login-result"></p>
+        </div>
+        <div class="mt-5">
+            <a href="index.html" class="btn btn-secondary">Back to Home</a>
+        </div>
+    </div>
+    <script>
+        // Enable the login button only when both username and password fields are not empty
+        document.querySelectorAll('#username, #password').forEach(input => {
+            input.addEventListener('input', () => {
+                const username = document.getElementById('username').value.trim();
+                const password = document.getElementById('password').value.trim();
+                document.querySelector('button').disabled = username === '' || password === '';
+            });
+        });
+
+        document.getElementById('login-form').addEventListener('submit', function (e) {
+            e.preventDefault();
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            const query = `username=${username}&password=${password}`;
+            const encodedQuery = encodeURIComponent(query);
+            const url = `sqli_attack.html?query=${encodedQuery}`;
+            document.getElementById('sql-query').innerText = '';            
+
+            console.log('Fetching URL:', url);
+            fetch(url, {
+                method: 'GET'
+            }).then(response => {
+                if (response.status === 403) {
+                    return response.text().then(text => {
+                        const blockedByWAF = new Error(text);
+                        blockedByWAF.name = "blockedByWAF";
+                        throw blockedByWAF;
+                    });
+                }
+                return response.text();
+            }).then(text => {
+                console.log('Fetch response:', text);
+                // Perform the SQL query and display the results
+                const sqlQuery = `SELECT * FROM users WHERE user_name = '${username}' AND password = '${password}'`;
+                executeSQLQuery(sqlQuery);
+            }).catch(error => {
+                console.error('Fetch error:', error);
+                if (error.name === 'blockedByWAF') {
+                    document.documentElement.innerHTML = `${error.message}`;
+                } else {
+                    document.getElementById('login-result').innerHTML = `<h2>Error: ${error.message}</h2>`;
+                }
+            });
+        });
+
+        // Function to execute the SQL query using sql.js
+        async function executeSQLQuery(query) {
+            document.getElementById('sql-query').innerText = `Performed SQL query: ${query}`;
+            const SQL = await initSqlJs({ locateFile: file => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.6.2/sql-wasm.wasm` });
+            const db = new SQL.Database();
+            
+            // Create a users table and insert sample data
+            db.run("CREATE TABLE users (user_name TEXT, password TEXT, profile TEXT)");
+            db.run("INSERT INTO users (user_name, password, profile) VALUES ('admin', 'adminpass', 'ADMIN')");
+            db.run("INSERT INTO users (user_name, password, profile) VALUES ('user', 'userpass', 'USER')");
+
+            // Execute the provided query
+            try {
+                const res = db.exec(query);
+                console.log('SQL execution result:', res);
+                if (res.length > 0) {
+                    document.getElementById('login-result').innerHTML = '<h2>Access Granted</h2>';
+                } else {
+                    document.getElementById('login-result').innerHTML = '<h2>Access Denied</h2>';
+                }
+            } catch (error) {
+                console.error('SQL execution error:', error);
+                document.getElementById('login-result').innerHTML = `<h2>Error: ${error.message}</h2>`;
+            }
+        }
+    </script>
+</body>
+</html>

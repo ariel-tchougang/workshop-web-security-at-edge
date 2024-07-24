@@ -1,0 +1,894 @@
+Web application protection at Edge
+
+In this demo we will show how we can use AWS Web Application Firewall (WAF) and CloudFront to protect a web site hosted:
+1 - In an S3 bucket
+2 - In an EC2 instance behind an Internet-facing Application Load Balancer
+
+To perform steps required for this demo, you'll need to:
+- Have access to an AWS account
+- Enough permissions to create or modify
+	- A CloudFront distribution
+	- An AWS WAF Web ACL
+	- An S3 bucket
+	- A VPC with at least 1 public subnet and 1 private subnet
+	- Security groups
+	- An SSH key pair
+	- An EC2 instance connect endpoint
+	- An S3 Gateway endpoint
+	- An EC2 instance
+	- A target group
+	- An Internet-facing Application Load Balancer
+	- An IAM role for EC2 with s3 sync permissions
+- Access to AWS CloudShell or to a Linux server (EC2, Cloud9, etc..) with Internet access (to perform curl requests when testing rate limiting later on in the lab)
+
+I - Download demo web site static files from github
+
+Go to [GITHUB PROJECT URL] and download zip
+
+Unzip it in a folder on your local computer
+
+You should find this tree structure:
+web/
+- styles/
+	- wafdemo.css
+- header_attack.html
+- htmli_attack.html
+- index.html
+- sqli_attack.html
+- xss_attack.html		
+
+II - Create an S3 bucket an set it up to host a static web site
+
+1 -  Create S3 bucket
+Open your AWS Console and go to S3
+Click on create bucket
+Pick a unique name: web-security-demo-xyz-DDMMYYYY, where xyz is your trigram (lowercase) and DDMMYYYY is the date
+Keep default settings but disable "Block public access"
+Scroll down and click on 'Create bucket' button
+
+2 - Upload files
+On the Objects tab, click on "Upload"
+Click on "Add files"
+Select and add demo web site html files
+Click on "Add folder"
+Select and add demo web site "styles" folder
+Scroll down and click on upload
+Click on close
+
+3 - Set public access bucket policy
+Go to "Permissions" tab, on Bucket policy component, click on "Edit"
+Add the following policy and "Save changes"
+
+{
+	"Version": "2012-10-17",
+	"Statement": [
+		{
+			"Sid": "AllowRead",
+			"Principal": "*",
+			"Effect": "Allow",
+			"Action": ["s3:GetObject"],
+			"Resource": ["arn:aws:s3:::REPLACE_WITH_YOUR_BUCKET_NAME/*"]
+		}
+	]
+}
+
+4 - Set up static website hosting
+Go to "Properties" tab, and scroll down to "Static website hosting" component
+Click on "Edit"
+Enable Static website hosting
+For Index document, set index.html
+Scroll down and "Save changes"
+
+Copy the provided S3 website URL and paste it in a browser (use private mode)
+
+III - Set up VPC features
+
+1 - Create VPC
+Go to VPC
+Click on "Create VPC"
+Choose "VCP and more"
+Choose a name
+Keep default settings
+Click on "Create VPC"
+
+2 - Create Security Groups
+
+2.1 For EC2 instance connect
+
+On the left menu, choose on Security Groups (under Security) 
+Click on "Create security group"
+- Security group name: EC2-instance-connect-SG
+- Description: Allow outbound SSH to VPC CIDR
+- VPC: choose your VPC
+
+Inbound rules: NONE
+
+Outbound rules:
+	- Type: SSH
+	- Destination: choose Custom and type VPC CIDR
+Tags
+	- Key: Name
+	- Value: EC2-instance-connect-SG
+
+click "Create security group"
+
+2.2 For EC2 instance SSH access from EC2 instance connect
+
+Click on "Create security group"
+- Security group name: SSH-from-instance-connect-SG
+- Description: Allow SSH from EC2 Instance Connect
+- VPC: choose your VPC
+
+Inbound rules:
+	- Type: SSH
+	- Source: choose Custom and choose EC2-instance-connect-SG
+Outbound rules: NONE
+Tags
+	- Key: Name
+	- Value: SSH-from-instance-connect-SG
+
+click "Create security group"
+
+2.3 For HTTP and HTTPS traffic within the VPC
+
+Click on "Create security group"
+- Security group name: Internal-vpc-http-SG
+- Description: Allow http and https traffic from within the VPC
+- VPC: choose your VPC
+
+Inbound rules:
+	- Type: HTTP
+	- Source: choose Custom and type VPC CIDR	
+	
+	- Type: HTTPS
+	- Source: choose Custom and type VPC CIDR
+	
+Outbound rules: keep DEFAULT
+Tags
+	- Key: Name
+	- Value: Internal-vpc-http-SG
+
+click "Create security group"
+
+2.4 For HTTP and HTTPS traffic from Internet
+
+Click on "Create security group"
+- Security group name: External-http-SG
+- Description: Allow http and https traffic from Internet
+- VPC: choose your VPC
+
+Inbound rules:
+	- Type: HTTP
+	- Source: choose Anywhere IPv4	
+	
+	- Type: HTTPS
+	- Source: choose Anywhere IPv4
+	
+Outbound rules: keep DEFAULT
+Tags
+	- Key: Name
+	- Value: External-http-SG
+
+click "Create security group"
+
+3 - Create an EC2 Instance Connect Endpoint
+
+On the left menu, under "Virtual private cloud", choose "Endpoints"
+Click on "Create endpoint"
+Name: ec2-instance-connect
+Service category: EC2 Instance Connect Endpoint
+VPC: choose your VPC
+Security group: choose "EC2-instance-connect-SG"
+Subnet: choose a subnet
+Click on "Create endpoint"
+
+
+IV - Set up EC2 features
+
+1 - Create an IAM role for your EC2 instance
+
+Go to IAM, and on the left menu, under "Access management", choose "Roles"
+Click on "Create role"
+Select "AWS service"
+Under "Use case" choose EC2
+Click on "Next"
+Click on "Next"
+Role name: EC2-DemoBucketAccessRole
+Click "Create role"
+
+On the role list filter with: EC2-DemoBucketAccessRole
+Click on your newly create role
+Under "Permissions" tab, choose "Add permissions" "Create inline policy"
+Select "JSON"
+Paste this
+
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Resource": [
+                "arn:aws:s3:::REPLACE_WITH_YOUR_BUCKET_NAME",
+                "arn:aws:s3:::REPLACE_WITH_YOUR_BUCKET_NAME/*"
+            ],
+            "Sid": "AllowSync",
+            "Effect": "Allow",
+            "Action": [
+                "s3:DeleteObject",
+                "s3:GetBucketLocation",
+                "s3:GetObject",
+                "s3:ListBucket",
+                "s3:PutObject"
+            ]
+        }
+    ]
+}
+
+Click "Next"
+Policy name: DemoBucketSyncPolicy
+Click "Create policy"
+
+2 - Create a Key pair
+
+Go to EC2
+
+On the left menu, go under "Network & Security" and choose "Key Pairs"
+Click Create key pair
+- Name: demo-key-pair
+- Key pair type: RSA
+- Private key file format: .pem
+
+Click Create key pair
+ 
+3 - Create website EC2 instance
+
+On the left menu, under "Instances" choose "Instances"
+Click "Launch instances"
+Name: website-server
+Amazon Machine Image (AMI): Amazon Linux 2023 AMI - x86_64
+Instance type: t2.micro or t3.micro
+Key pair: choose "demo-key-pair"
+
+Network settings -> "Edit"
+VPC: choose your VPC
+Subnet: choose a "private" subnet !!
+Auto-assign public IP: Disable
+Firewall (security groups): Select existing security group
+- SSH-from-instance-connect-SG
+- Internal-vpc-http-SG
+
+Advanced details
+IAM instance profile: choose "EC2-DemoBucketAccessRole"
+User data: paste the following script
+#!/bin/bash -xe
+
+# Install required packages
+echo "Install httpd"
+yum update -y
+yum install -y jq httpd
+
+# Start and enable the Apache service
+echo "Start and enable the Apache service"
+systemctl start httpd
+systemctl enable httpd
+
+echo "<html><head><title>EC2 instance</title></head><body><h1><center>EC2 instance is running successfully!!</center></h1></body></html>" > /var/www/html/index.html
+
+# Fetch files from S3
+echo "Fetch files from S3"
+aws s3 sync s3://REPLACE_WITH_YOUR_BUCKET_NAME /var/www/html
+
+# End of script
+echo "End of user data script"
+
+- Click on "Launch instance"
+
+4 - Create a Target Group
+
+On the left menu, under "Load balancing" choose "Target Groups"
+Click on "Create target group"
+
+Basic configuration:
+- Choose a target type: instances
+- Target group name: DemoTargetGroup
+- Protocol : Port -> HTTP : 80
+- IP address type: IPv4
+- VPC: your VPC
+- Protocol version: HTTP1
+- Click "Next"
+- Select your instance, then click on "Include as pending below"
+- Click on "Create target group"
+
+5 - Create an Application Load Balancer
+
+On the left menu, under "Load balancing" choose "Load Balancers"
+Click on "Create load balancer"
+Load balancer types: Application Load Balancer (click on "Create")
+
+Basic configuration:
+- Load balancer name: DemoALB
+- Scheme: Internet-facing
+- Load balancer IP address type: IPv4
+
+Network mapping: 
+- VPC: choose your VPC
+- Mappings: select the AZ you want ALB to be distributing traffic to. For each AZ pick a public subnet
+
+Security groups: External-http-SG
+
+Listeners and routing: Protocol HTTP : Port 80 -> Forward to DemoTargetGroup
+
+Scroll down and click on "Create load balancer"
+
+Wait till DemoALB status is Active
+Copy DemoALB DNS name, and paste it in a browser (use private mode)
+
+V - Distribute website content through CloudFront
+
+1 - Create a CloudFront distribution with our S3 bucket as origin
+
+Go to CloudFront console
+Click on "Create distribution"
+
+Origin:
+- Origin domain: choose your S3 bucket endpoint
+- Name: web-security-demo-s3
+- Origin access: Public
+
+Default cache behavior:
+- Viewer protocol policy: Redirect HTTP to HTTPS
+- Allowed HTTP methods: GET, HEAD
+- Cache key and origin requests: Cache policy and origin request policy (recommended)
+
+Web Application Firewall (WAF): Do not enable security protections  - for the moment
+
+Settings:
+- Default root object: index.html
+
+Scroll down, and click on "Create distribution"
+
+While the distribution is being deployed, copy the distribution domain name, and paste in a notepad to be used later.
+
+2 - Create a CloudFront distribution with our DemoALB as origin
+
+Go back to CloudFront console
+Click on "Create distribution"
+
+Origin:
+- Origin domain: choose your DemoALB DNS name
+- Protocol: HTTP only
+- Name: web-security-demo-alb
+- Add custom header
+	+ Header name: x-cloudfront-secret  Value: 0123456789
+
+Default cache behavior:
+- Viewer protocol policy: Redirect HTTP to HTTPS
+- Allowed HTTP methods: GET, HEAD
+- Cache key and origin requests: Cache policy and origin request policy (recommended)
+
+Web Application Firewall (WAF): Do not enable security protections  - for the moment
+
+Settings:
+- Default root object: index.html
+
+Scroll down, and click on "Create distribution"
+
+While the distribution is being deployed, copy the distribution domain name, and paste in a notepad to be used later.
+
+3 - Test access from CloudFront (Assuming both distributions are deployed)
+
+Paste S3 distribution domain name in a browser (private mode) and verify you have access the website content.
+
+Paste ALB distribution domain name in a browser (private mode) and verify you have access the website content.
+
+VI - Block direct access from S3 website endpoint and DemoALB DNS name
+
+1 - Block direct access from S3 website
+
+Go to your S3 distribution / Origins Tab
+
+Edit your origin:
+- Origin access: Origin access control settings (recommended)
+- Create new OAC
+	+ Name: demo-OAC
+	+ Signing behavior: Sign requests (recommended)
+	+ Click on "Create"
+
+Scroll down and "Save changes"
+
+Next, go to S3 Console, and choose your bucket
+
+Go to tab "Permissions" and edit the bucket policy (replace the placeholders with appropriate data) if not done automatically by CloudFront
+
+{
+    "Version": "2012-10-17",
+    "Statement": {
+        "Sid": "AllowCloudFrontServicePrincipalReadOnly",
+        "Effect": "Allow",
+        "Principal": {
+            "Service": "cloudfront.amazonaws.com"
+        },
+        "Action": "s3:GetObject",
+        "Resource": "arn:aws:s3:::<S3 bucket name>/*",
+        "Condition": {
+            "StringEquals": {
+                "AWS:SourceArn": "arn:aws:cloudfront::<AWS account ID>:distribution/<CloudFront distribution ID>"
+            }
+        }
+    }
+}
+
+Go to tab "Properties"
+Copy the provided S3 website URL and paste it in a browser (use private mode)
+Assert you get a 403 Forbidden - Access Denied message
+
+2 - Block direct access from DemoALB DNS name
+
+Go to EC2 console
+On the left menu, under "Load Balancing", choose "Load balancers"
+Click on DemoALB
+Go to tab Listeners and rules
+Click on text "HTTP:80"
+On tab "Listener rules" click on "Default", then choose Actions/Edit rule
+
+Listener details:
+- Routing actions: Return fixed response
+- Response code: 403
+- content type: text/html
+- Response body: paste the following
+<html>
+<head><title>403 Forbidden</title></head>
+<body>
+	<h1>403 Forbidden</h1>
+	<ul>
+		<li>Code: AccessDenied</li>
+		<li>Message: Access Denied</li>
+	</ul>
+	<hr/>
+</body>
+</html>
+
+Click on "Save changes"
+
+Click on Add rule
+
+Name and tags: AllowAccessFromCloudFront
+Click on Add condition
+- Rule condition types: HTTP header
+- HTTP header name: x-cloudfront-secret
+- HTTP header value: 0123456789
+
+Click on "confirm"
+
+Click on "Next"
+Actions:
+- Routing actions: Forward to target groups
+- Target group: DemoTargetGroup
+
+Click on "Next"
+
+Priority: 1
+
+Click on "Next"
+Click on "Create"
+
+Go back to DemoALB
+Copy the DNS name and paste it in a browser (use private mode)
+Assert you get a 403 Forbidden - Access Denied message
+
+3 - Test access from CloudFront distributions
+
+When both updated distributions are deployed, paste their domain names in a browser (in private mode)
+Assert access is still granted
+
+VII - Now let's take a look at some vulnerabilities
+
+1 - XSS
+
+- Explain the problem
+
+Cross-Site Scripting (XSS) is a type of security vulnerability typically found in web applications. 
+It allows attackers to inject malicious scripts into content from otherwise trusted websites. 
+These scripts can then execute in the user's browser, potentially leading to the compromise of user data, session hijacking, and more.
+
+- Show an example on both sites
+
+<script>alert("XSS Attack Demo!!")</script>
+
+- Mitigations:
+
+To prevent XSS attacks, you should:
+Sanitize Input: Remove or encode potentially dangerous characters from user input.
+Use Content Security Policy (CSP): Define approved sources for content that browsers should enforce.
+Validate and Encode Output: Ensure that any user input included in the HTML output is properly encoded.
+
+- Create a rule in a WebACL to solve it
+
+Go to WAF (Web Application Firewall console)
+Click on "Create web ACL"
+Web ACL details:
+- Resource type: choose Amazon CloudFront distributions
+- Name: DemoWebACL
+
+Scroll down and click on "Next"
+
+In "Rules" component, choose "Add rules / Add managed rule groups"
+Expand "AWS managed rule groups"
+Scroll down to "Free rule groups"
+Enable "Core rule set". 
+
+It Contains rules that are generally applicable to web applications, providing protection against exploitation of a wide range of vulnerabilities, such as XSS.
+
+Scroll down and click on "Add rules"
+Scroll down and click on "Next"
+Click on "Next"
+Click on "Next"
+Review and click on "Create web ACL"
+
+- Apply the rule
+
+Go to CloudFront
+Choose the S3 distribution you created earlier
+Go to tab "Security"
+On "Security - Web Application Firewall (WAF)" component, click "Edit"
+Choose: "Enable security protections"
+Enable Use existing WAF configuration
+Choose "DemoWebACL"
+Save changes
+
+Repeat the same process for the ALB distribution you created earlier
+
+Wait till the both distribution are redeployed
+
+- Show the solution on both sites
+
+<script>alert("XSS Attack Demo!!")</script>
+
+2 - SQL injection
+
+- Explain the problem
+
+SQL Injection is a type of security vulnerability that occurs when an attacker can manipulate an SQL query by injecting malicious SQL code into input fields. 
+This can result in unauthorized access to the database, allowing attackers to retrieve, modify, or delete data. 
+SQL Injection exploits the improper handling of input data and insufficient input validation.
+
+- Show an example on both sites
+
+Username: admin
+Password: adminpass
+
+Username: admin
+Password: badpassword
+
+Username: admin' --
+Password: anything
+
+Username: admin
+Password: anything' OR 'a'='a
+
+- Mitigations:
+
+Use Prepared Statements: Ensure queries use parameterized inputs.
+Sanitize Input: Validate and sanitize all user inputs.
+Least Privilege: Use database accounts with the least privilege necessary.
+Stored Procedures: Use stored procedures to abstract and encapsulate database access.
+Error Handling: Avoid displaying detailed error messages that reveal SQL structure.
+
+- Add a rule in DemoWebACL to solve it
+
+Go to WAF (Web Application Firewall console)
+On left menu, under AWS WAF, click on "Web ACLs"
+Click on "DemoWebACL"
+On tab "Rules", choose "Add rules / Add managed rule groups"
+Expand "AWS managed rule groups"
+Scroll down to "Free rule groups"
+Enable "SQL database;"
+
+Scroll down and click on "Add rules"
+Click on "Save"
+
+- Show the solution on both sites
+
+Username: admin
+Password: adminpass
+
+Username: admin
+Password: badpassword
+
+Username: admin' --
+Password: anything
+
+Username: admin
+Password: anything' OR 'a'='a
+
+3 - Header Injection Attack
+
+- Explain the problem
+
+Description: 
+This occurs when an attacker includes malicious data in HTTP headers, aiming to manipulate the server's response headers. 
+If the server does not properly handle or sanitize headers, this can lead to various exploits like HTTP response splitting, cache poisoning, or cross-site scripting (XSS).
+
+Impact: 
+The potential consequences of header injection can range from disrupting legitimate user sessions to more severe exploits, including hijacking user sessions, redirecting users to malicious sites, or injecting executable scripts.
+
+- Show an example on both sites
+
+Header: X-XSS-Header
+Value: <script>alert("Attacked by Demo")</script>
+
+Header: X-SQLI-Password
+Value: password' OR 'a'='a
+
+Header: X-Attack-Demo
+Value: anything
+
+- Mitigations:
+
+Sanitize and Validate Headers: Ensure that any custom headers received are validated and sanitized to remove any malicious content.
+Input Validation: Apply strict validation rules for headers, only allowing expected values and formats.
+Content Security Policy (CSP): Implement CSP to mitigate potential XSS attacks stemming from header manipulation.
+Proper Logging Practices: Ensure that logs are securely handled and that any user input included in logs is sanitized to prevent log injection attacks.
+
+- Add a rule in DemoWebACL to solve it
+
+Go to WAF (Web Application Firewall console)
+On left menu, under AWS WAF, click on "Web ACLs"
+Click on "DemoWebACL"
+On tab "Rules", choose "Add rules / Add my own rules and rule groups"
+Rule type: choose "Rule builder"
+
+Rule component:
+- Name: BlockHeaderInjection-Rule
+- Type: Regular rule
+- If a request: matches at least one of the statements (OR)
+
+Statement 1 component:
+- Inspect: All headers
+- Headers match scope: Values
+- Content to inspect: All headers
+- Match type: Contains SQL injection attacks
+- Oversize handling: Match - Treat the web request as matching the rule statement
+
+Statement 2 component:
+- Inspect: All headers
+- Headers match scope: Values
+- Content to inspect: All headers
+- Match type: Contains XSS injection attacks
+- Oversize handling: Match - Treat the web request as matching the rule statement
+
+Statement 3 component:
+- Inspect: All headers
+- Headers match scope: Keys
+- Content to inspect: All headers
+- Match type: Contains string
+- String to match: attack
+- Text transformation: Lowercase
+- Oversize handling: Match - Treat the web request as matching the rule statement
+
+Then Action: Block
+Click on "Add rule"
+Move up BlockHeaderInjection-Rule to the top of "Rules" component
+Click on "Save"
+
+- Show the solution on both sites
+
+Header: X-XSS-Header
+Value: <script>alert("Attacked by Demo")</script>
+
+Header: X-SQLI-Password
+Value: password' OR 'a'='a
+
+Header: X-Attack-Demo
+Value: anything
+
+
+WEBSITE_URL=https://xxxxxxxxxxx.cloudfront.net/
+curl -H 'X-XSS-Injection: <script>alert("Attacked by Demo")</script>' $WEBSITE_URL
+curl -H 'X-SQL-Injection: password'\'' OR '\''a\'='\''a' $WEBSITE_URL
+curl -H 'X-SQL-Injection: admin'\''--' $WEBSITE_URL
+curl -H 'X-Book-Attack: test</script>' $WEBSITE_URL
+
+
+4 - HTML code injection
+
+- Explain the problem
+
+HTML code injection occurs when an attacker is able to insert malicious HTML content into a web page, which can be executed by the browser of anyone viewing the page. 
+This type of vulnerability is often the result of failing to properly sanitize user input. 
+HTML injection can lead to various attacks, including cross-site scripting (XSS), manipulation of page content, and more.
+
+- Show an example on both sites
+
+<html><body><h1>HTML code injection!</h1></body></html>
+
+- Mitigations:
+
+Sanitize Input: Use functions like htmlspecialchars to convert special characters into their HTML-safe equivalents.
+Validate Input: Ensure that user input conforms to expected formats and lengths.
+Output Encoding: Always encode user input before rendering it in the HTML content.
+Content Security Policy (CSP): Use CSP headers to restrict the sources from which content can be loaded.
+
+- Add a rule in DemoWebACL to solve it
+
+Go to WAF (Web Application Firewall console)
+
+On left menu, under AWS WAF, click on "Regex pattern sets"
+Click on "Create regex pattern set"
+Regex pattern set name: Demo-HTML-Tags
+Region: Global (CloudFront)
+Regular expressions: copy the following
+<html>
+<body>
+<script>
+<h1>
+<h2>
+<h3>
+<div>
+<p>
+<a>
+<span>
+
+Click on "Create regex pattern set" 
+
+
+On left menu, under AWS WAF, click on "Web ACLs"
+Click on "DemoWebACL"
+On tab "Rules", choose "Add rules / Add my own rules and rule groups"
+Rule type: choose "Rule builder"
+
+Rule component:
+- Name: BlockQueryParamHTMLInjection-Rule
+- Type: Regular rule
+- If a request: matches the statement
+
+Statement component:
+- Inspect: All query parameters
+- Match type: Matches pattern from regex pattern set
+- Regex pattern set: Demo-HTML-Tags
+- Text transformation: URL decode
+
+Then Action: Block
+Click on "Add rule"
+Move up BlockQueryParamHTMLInjection-Rule to the top of "Rules" component
+Click on "Save"
+
+- Show the solution on both sites
+
+<html><body><h1>HTML code injection!</h1></body></html>
+
+5 - HTTP flood
+
+- Explain the problem
+
+HTTP Flood attacks are a type of Distributed Denial of Service (DDoS) attack where an attacker sends a large number of HTTP requests to a web server with the intent to overwhelm the server's resources and make it unavailable to legitimate users. 
+These attacks exploit the HTTP protocol, often targeting web applications with complex URLs or forms that require significant server processing.
+
+Types of HTTP Flood Attacks:
+
+GET Flood: The attacker sends a large number of HTTP GET requests to fetch resources from the server.
+POST Flood: The attacker sends a large number of HTTP POST requests, often with large payloads, to submit data to the server.
+Slowloris: The attacker sends HTTP requests slowly, keeping many connections open and consuming server resources.
+
+- Mitigations:
+
+To protect against HTTP Flood attacks, various strategies can be employed:
+
+Rate Limiting: Restrict the number of requests a single IP address can make in a given time period.
+CAPTCHA: Use CAPTCHA to ensure that requests are coming from real users.
+Web Application Firewall (WAF): Deploy a WAF to filter and block malicious traffic.
+IP Blacklisting: Identify and block IP addresses that are sending an excessive number of requests.
+Content Delivery Network (CDN): Use a CDN to distribute traffic and absorb large volumes of requests.
+Behavioral Analysis: Use tools to analyze traffic patterns and identify abnormal behavior indicative of an attack.
+
+- Show an example on both sites
+
+Open a shell (CloudShell, or either in a Linux EC2 instance with internet access)
+
+TEST_URL=https://xxxxxxxxxxxx.cloudfront.net
+for ((i=1;i<=250;i++)); do curl  -I -k $TEST_URL; done
+curl -s $TEST_URL;
+
+Expect: last curl request is still successful
+
+- Add a rule in DemoWebACL to implement Rate Limiting
+
+Go to WAF (Web Application Firewall console)
+
+On left menu, under AWS WAF, click on "Web ACLs"
+Click on "DemoWebACL"
+On tab "Rules", choose "Add rules / Add my own rules and rule groups"
+Rule type: choose "Rule builder"
+
+Rule component:
+- Name: BlockHTTPFlood-rule
+- Type: Rate-based rule
+
+Rate-limiting criteria component:
+Rate limit: 200
+Evaluation window: 1 minute (60 seconds)
+Request aggregation: Source IP address
+Scope of inspection and rate limiting: Consider all requests
+
+Then Action: Block
+Click on "Add rule"
+Move up BlockHTTPFlood-rule to the top of "Rules" component
+Click on "Save"
+
+- Show the solution on both sites
+
+Open a shell (CloudShell, or either in a Linux EC2 instance with internet access)
+
+TEST_URL=https://xxxxxxxxxxxx.cloudfront.net
+for ((i=1;i<=250;i++)); do curl  -I -k $TEST_URL; done
+curl -s $TEST_URL;
+
+Expect: last curl request to be blocked
+
+VIII - Prevent access from restricted locations
+
+Go to CloudFront
+Select your S3 distribution
+Go to tab "Security"
+Expand "Security - Web Application Firewall (WAF)"
+Expand "CloudFront geographic restrictions"
+Click on "Edit" near Country -> "Countries - Edit"
+Under restriction type, choose your preferred policy (Allow list or Block list)
+Define your policy locations
+Save changes
+Wait for your distribution to be redeployed
+Test the link from a location not matching your policy
+Assert the link is not accessible
+
+
+VIII - Clean up
+
+01 - Go to CloudFront
+02 - Choose your S3 distribution
+03 - Go to tab Security
+04 - Disable AWS WAF protection
+05 - Go back to your distribution list
+06 - Disable your S3 distribution
+07 - Repeat steps 2 to 6 with your ALB distribution
+
+08 - Go to WAF
+09 - Go to Web ACLs
+10 - Delete DemoWebACL
+11 - Go to Regex pattern sets
+12 - Delete Demo-HTML-Tags
+
+13 - Go to S3
+14 - Select your bucket
+15 - Delete all objects from your bucket (you can click on "Empty" for that)
+16 - Delete your bucket
+
+17 - Go to EC2
+18 - Go to instances
+19 - Select your website-server instance, click on Instance state/Terminate instance
+20 - Go to Load Balancing / Load balancers
+21 - Select DemoALB, then click on Actions/Delete load balancer
+22 - Go to Load Balancing / Target groups
+23 - Select DemoTargetGroup, then click on Actions/Delete
+24 - Go to Network & Security / Key Pairs
+25 - Select demo-key-pair, then click on Actions/Delete
+
+26 - Go to VPC
+27 - Go to Endpoints
+28 - Delete your S3 Gateway endpoint (Actions/Delete VPC endpoints)
+29 - Delete your EC2 instance connect endpoint (Actions/Delete VPC endpoints)
+30 - Go to "Your VPCs"
+31 - Select your VPC
+32 - Actions/Delete VPC
+
+33 - Go to IAM and choose Roles on the left menu under Access management
+34 - Select the Role EC2-DemoBucketAccessRole and delete it
+
+35 - Go to CloudFront
+36 - Select your S3 distribution
+37 - Select your ALB distribution
+38 - Delete both distributions
+39 - On the left menu, go to Security / Origin access
+40 - On tab Control settings, select and delete the Origin access control named demo-OAC
+
+
+
+

@@ -1,0 +1,418 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Web security at edge workshop
+
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.128.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+      - Key: Name
+        Value: Workshop VPC
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+      - Key: Name
+        Value: Workshop Internet Gateway
+
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.128.0.0/24
+      MapPublicIpOnLaunch: true
+      AvailabilityZone: !Select 
+        - '0'
+        - !GetAZs ''
+      Tags:
+        - Key: Name
+          Value: Workshop Public Subnet 1
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.128.1.0/24
+      MapPublicIpOnLaunch: false
+      AvailabilityZone: !Select 
+        - '0'
+        - !GetAZs ''
+      Tags:
+        - Key: Name
+          Value: Workshop Private Subnet 1
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.128.2.0/24
+      MapPublicIpOnLaunch: true
+      AvailabilityZone: !Select 
+        - '1'
+        - !GetAZs ''
+      Tags:
+        - Key: Name
+          Value: Workshop Public Subnet 2
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.128.3.0/24
+      MapPublicIpOnLaunch: false
+      AvailabilityZone: !Select 
+        - '1'
+        - !GetAZs ''
+      Tags:
+        - Key: Name
+          Value: Workshop Private Subnet 2
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: Workshop Public Route Table
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnetRouteTableAssociation1:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnetRouteTableAssociation2:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: Workshop Private Route Table
+
+  PrivateSubnetRouteTableAssociation1:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet1
+      RouteTableId: !Ref PrivateRouteTable
+
+  PrivateSubnetRouteTableAssociation2:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet2
+      RouteTableId: !Ref PrivateRouteTable
+  
+  WorkshopS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      AccessControl: Private
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+  
+  Ec2InstanceConnectSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Allow SSH outbound to VPC CIDR"
+      VpcId: !Ref VPC
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !GetAtt VPC.CidrBlock
+          Description: "Allow SSH outbound to VPC CIDR"
+      Tags:
+      - Key: Name
+        Value: EC2-instance-connect-SG
+
+  SshFromInstanceConnectSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Allow SSH from EC2 Instance Connect"
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          SourceSecurityGroupId: !Ref Ec2InstanceConnectSecurityGroup
+          Description: "Allow SSH from EC2 Instance Connect"
+      Tags:
+      - Key: Name
+        Value: SSH-from-instance-connect-SG
+
+  InternalVpcHttpSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Allow http and https traffic from within the VPC"
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: !GetAtt VPC.CidrBlock
+          Description: "Allow http traffic from within the VPC"
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: !GetAtt VPC.CidrBlock
+          Description: "Allow https traffic from within the VPC"
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          FromPort: -1
+          ToPort: -1
+          CidrIp: 0.0.0.0/0
+          Description: "Allow all outbound traffic"
+      Tags:
+      - Key: Name
+        Value: Internal-vpc-http-SG
+
+  ExternalHttpSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Allow http and https traffic from Internet"
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+          Description: "Allow http traffic from Internet"
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+          Description: "Allow https traffic from Internet"
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          FromPort: -1
+          ToPort: -1
+          CidrIp: 0.0.0.0/0
+          Description: "Allow all outbound traffic"
+      Tags:
+      - Key: Name
+        Value: External-http-SG
+
+  WorkshopS3GatewayEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      RouteTableIds:
+        - !Ref PublicRouteTable
+        - !Ref PrivateRouteTable
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.s3'
+      VpcId: !Ref VPC
+  
+  WorkshopEc2InstanceConnectEndpoint:
+    Type: AWS::EC2::InstanceConnectEndpoint
+    Properties:
+      SubnetId: !Ref PrivateSubnet2
+      SecurityGroupIds:
+        - !Ref Ec2InstanceConnectSecurityGroup
+      Tags:
+      - Key: Name
+        Value: WorkshopEc2InstanceConnectEndpoint
+
+  WorkshopWebServerInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action: sts:AssumeRole
+            Principal:
+              Service: ec2.amazonaws.com
+      Policies:
+        - PolicyName: WorkshopS3BucketAllowS3SyncPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:DeleteObject
+                  - s3:GetBucketLocation
+                  - s3:GetObject
+                  - s3:ListBucket
+                  - s3:PutObject
+                Resource:
+                  - !Sub '${WorkshopS3Bucket.Arn}'
+                  - !Sub '${WorkshopS3Bucket.Arn}/*'
+      Tags:
+        - Key: Name
+          Value: WorkshopWebServerInstanceRole
+
+  WorkshopWebServerInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - Ref: WorkshopWebServerInstanceRole
+
+  WorkshopKeyPair:
+    Type: AWS::EC2::KeyPair
+    Properties:
+      KeyName: workshop-key-pair
+      KeyType: rsa
+      Tags:
+      - Key: Name
+        Value: workshop-key-pair
+  
+  WorkshopTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckIntervalSeconds: 30
+      HealthCheckPath: /
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      Name: WorkshopTargetGroup
+      Port: 80
+      Protocol: HTTP
+      Tags:
+        - Key: Name
+          Value: WorkshopTargetGroup
+      UnhealthyThresholdCount: 2
+      VpcId: !Ref VPC
+
+  WorkshopLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: WorkshopLoadBalancer
+      Scheme: internet-facing
+      Type: application
+      IpAddressType: ipv4
+      Subnets:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+      SecurityGroups:
+        - !Ref ExternalHttpSecurityGroup
+      Tags:
+        - Key: Name
+          Value: WorkshopLoadBalancer
+
+  WorkshopListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref WorkshopTargetGroup
+      LoadBalancerArn: !Ref WorkshopLoadBalancer
+      Port: 80
+      Protocol: HTTP
+      Tags:
+        - Key: Name
+          Value: WorkshopListener
+
+  WorkshopWebserverInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      IamInstanceProfile: !Ref WorkshopWebServerInstanceProfile
+      ImageId: resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-6.1-x86_64
+      InstanceType: t3.micro
+      KeyName: !Ref WorkshopKeyPair
+      SecurityGroupIds:
+        - Fn::GetAtt: [SshFromInstanceConnectSecurityGroup, GroupId]
+        - Fn::GetAtt: [InternalVpcHttpSecurityGroup, GroupId]
+      SubnetId: !Ref PrivateSubnet1
+      Tags:
+        - Key: Name
+          Value: WorkshopWebserver
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash -xe
+          exec > /var/log/user-data.log 2>&1
+          set -o xtrace
+
+          # Install required packages
+          echo "Install httpd"
+          yum update -y
+          yum install -y httpd
+
+          # Start and enable the Apache service
+          echo "Start and enable the Apache service"
+          systemctl start httpd
+          systemctl enable httpd
+          groupadd www
+          usermod -a -G www ec2-user
+          chown -R root:www /var/www
+          chmod 2775 /var/www
+          find /var/www -type d -exec chmod 2775 {} +
+          find /var/www -type f -exec chmod 0664 {} +
+          cd /var/www/html/
+          echo "<html><head><title>EC2 instance</title></head><body><h1><center>EC2 instance is running successfully!!</center></h1></body></html>" > /var/www/html/index.html
+          # /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackId} --resource WorkshopWebserverInstance --region ${AWS::Region}
+    # CreationPolicy:
+    #   ResourceSignal:
+    #     Timeout: PT30M
+    #     Count: 1
+    DependsOn:
+      - WorkshopWebServerInstanceProfile
+
+  WorkshopCloud9Instance:
+    Type: AWS::Cloud9::EnvironmentEC2
+    Properties:
+      AutomaticStopTimeMinutes: 60
+      ConnectionType: CONNECT_SSM
+      Description: Cloud9 instance for lab environment
+      ImageId: amazonlinux-2023-x86_64
+      InstanceType: t3.micro
+      Name: WorkshopCloud9Instance
+      SubnetId: !Ref PublicSubnet2
+    DependsOn:
+      - PublicSubnet2
+
+  # WorkshopWebACL:
+  #   Type: AWS::WAFv2::WebACL
+  #   Properties:
+  #     Name: WorkshopWebACL
+  #     DefaultAction:
+  #       Allow: {}
+  #     Scope: CLOUDFRONT
+  #     VisibilityConfig:
+  #       CloudWatchMetricsEnabled: true
+  #       MetricName: WorkshopWebACLMetric
+  #       SampledRequestsEnabled: true
+  #     Tags:
+  #       - Key: Name
+  #         Value: WorkshopWebACL
+
+Outputs:
+  WorkshopInstanceId:
+    Description: The InstanceId of the newly created EC2 instance
+    Value: !Ref WorkshopWebserverInstance
+  WorkshopCloud9InstanceId:
+    Description: The InstanceId of the Cloud9 instance
+    Value: !Ref WorkshopCloud9Instance
+  WorkshopBucketName:
+    Value: !Ref WorkshopS3Bucket
+    Description: Name Workshop bucket
+
+
+  
+      
