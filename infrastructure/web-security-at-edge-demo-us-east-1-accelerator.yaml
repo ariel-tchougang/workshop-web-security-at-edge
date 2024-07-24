@@ -443,19 +443,6 @@ Resources:
       - WorkshopS3Bucket
       - WorkshopNATGateway
 
-  WorkshopCloud9Instance:
-    Type: AWS::Cloud9::EnvironmentEC2
-    Properties:
-      AutomaticStopTimeMinutes: 60
-      ConnectionType: CONNECT_SSM
-      Description: Cloud9 instance for lab environment
-      ImageId: amazonlinux-2023-x86_64
-      InstanceType: t3.micro
-      Name: WorkshopCloud9Instance
-      SubnetId: !Ref PublicSubnet2
-    DependsOn:
-      - PublicSubnet2
-
   WorkshopWebACL:
     Type: AWS::WAFv2::WebACL
     Properties:
@@ -475,12 +462,12 @@ Outputs:
   WorkshopInstanceId:
     Description: The InstanceId of the newly created EC2 instance
     Value: !Ref WorkshopWebserverInstance
-  WorkshopCloud9InstanceId:
-    Description: The InstanceId of the Cloud9 instance
-    Value: !Ref WorkshopCloud9Instance
   WorkshopBucketName:
     Value: !Ref WorkshopS3Bucket
     Description: Name Workshop bucket
+  WorkshopS3WebsiteURL:
+    Description: 'Workshop S3 Website URL'
+    Value: !GetAtt WorkshopS3Bucket.WebsiteURL
 
 
   
