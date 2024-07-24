@@ -550,6 +550,103 @@ Resources:
       ServiceToken: !GetAtt S3BucketCleanUpLambda.Arn
       BucketName: !Ref WorkshopS3Bucket
 
+  WebACLCleanupLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: WebACLCleanupPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - wafv2:GetWebACL
+                  - wafv2:UpdateWebACL
+                Resource: "*"
+              - Effect: Allow
+                Action: 'logs:*'
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - cloudformation:SignalResource
+                Resource: "*"
+
+  WebACLCleanupLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: index.handler
+      Role: !GetAtt WebACLCleanupLambdaRole.Arn
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import cfnresponse
+
+          wafv2 = boto3.client('wafv2')
+
+          def handler(event, context):
+              try:
+                  if event['RequestType'] == 'Delete':
+                      web_acl_ref = event['ResourceProperties']['WebACLRef']
+                      tokens = web_acl_ref.split('|')
+                      web_acl_name = tokens[0]
+                      web_acl_id = tokens[1]
+                      web_acl_scope = tokens[2]
+
+                      # Get the current WebACL configuration
+                      response = wafv2.get_web_acl(
+                          Name=web_acl_name,
+                          Scope=web_acl_scope,
+                          Id=web_acl_id
+                      )
+                      web_acl = response['WebACL']
+                      updates = []
+
+                      # Remove all rules
+                      for rule in web_acl.get('Rules', []):
+                          updates.append({
+                              'Action': 'DELETE',
+                              'Rule': rule
+                          })
+
+                      if updates:
+                          # Ensure the description is not empty
+                          description = web_acl.get('Description', 'Default description for WebACL update')
+                          if not description:
+                              description = 'Default description for WebACL update'
+
+                          # Update the WebACL to remove the rules
+                          wafv2.update_web_acl(
+                              Name=web_acl['Name'],
+                              Scope=web_acl_scope,
+                              Id=web_acl['Id'],
+                              DefaultAction=web_acl['DefaultAction'],
+                              Description=description,
+                              Rules=[],
+                              VisibilityConfig=web_acl['VisibilityConfig'],
+                              LockToken=response['LockToken']
+                          )
+
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+              except Exception as e:
+                  print(e)
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {})
+      Runtime: python3.12
+      Timeout: 300
+
+  WebACLCleanupCustomResource:
+    Type: Custom::WebACLCleanup
+    Properties:
+      ServiceToken: !GetAtt WebACLCleanupLambda.Arn
+      WebACLRef: !Ref WorkshopWebACL
+
 Outputs:
   WorkshopInstanceId:
     Description: The InstanceId of the newly created EC2 instance
