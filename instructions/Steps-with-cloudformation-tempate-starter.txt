@@ -74,106 +74,23 @@ click on "Next"
 click on "Next"
 Click on "Create web ACL"		
 
-II - Set up the S3 bucket created by your CloudFormation template to host a static web site
+II - Test the application
 
-1 -  Find your bucket
+1 -  S3 static website
 Open your AWS Console and go to CloudFormation
 Choose your stack
-Go to Resources tab
-Type "WorkshopS3Bucket" in the Search filter
-Click on WorkshopS3Bucket Physical ID link
+Go to Output tab
+Copy the link for WorkshopS3WebsiteURL
+Paste it in a browser (use private mode)
 
-2 - Upload files
-On the Objects tab, click on "Upload"
-Click on "Add files"
-Select and add demo web site html files
-Click on "Add folder"
-Select and add demo web site "styles" folder
-Scroll down and click on upload
-Click on close
+2 - ALB static website
+Open your AWS Console and go to CloudFormation
+Choose your stack
+Go to Output tab
+Copy the link for WorkshopLoadBalancerDNSName
+Paste it in a browser (use private mode)
 
-3 - Set public access bucket policy
-Go to "Permissions" tab, 
-
-Edit Block public access (bucket settings)
-Uncheck all options
-Click on "Save changes"
-Confirm
-
-Edit Bucket policy
-Add the following policy and "Save changes"
-
-{
-	"Version": "2012-10-17",
-	"Statement": [
-		{
-			"Sid": "AllowRead",
-			"Principal": "*",
-			"Effect": "Allow",
-			"Action": ["s3:GetObject"],
-			"Resource": ["arn:aws:s3:::REPLACE_WITH_YOUR_BUCKET_NAME/*"]
-		}
-	]
-}
-
-{
-  "Version":"2012-10-17",
-  "Id":"HTTP referer policy example",
-  "Statement":[
-    {
-      "Sid":"Allow only GET requests originating from www.example.com and example.com.",
-      "Effect":"Allow",
-      "Principal":"*",
-      "Action":["s3:GetObject","s3:GetObjectVersion"],
-      "Resource":"arn:aws:s3:::DOC-EXAMPLE-BUCKET/*",
-      "Condition":{
-        "StringLike":{"aws:Referer":["http://www.example.com/*","http://example.com/*"]}
-      }
-    }
-  ]
-}
-
-4 - Set up static website hosting
-Go to "Properties" tab, and scroll down to "Static website hosting" component
-Click on "Edit"
-Enable Static website hosting
-For Index document, set index.html
-Scroll down and "Save changes"
-
-Copy the provided S3 website URL and paste it in a browser (use private mode)
-
-III - Set up EC2 features
-
-Open your AWS Console and go to EC2
-
-1 - Add static web files to WorkshopWebserver instance
-On the left menu, under "Instances" choose "Instances"
-Select WorkshopWebserver
-Click on "Connect"
-On "EC2 Instance Connect" tab, choose "Connect using EC2 Instance Connect Endpoint"
-Scroll down and click on "Connect"
-In the console, type: "sudo su"
-Then type: "aws s3 sync s3://REPLACE_WITH_YOUR_BUCKET_NAME /var/www/html"
-Type: exit
-Type: exit
-
-2 - Add WorkshopWebserver instance to WorkshopTargetGroup
-
-On the left menu, under "Load balancing" choose "Target Groups"
-Choose WorkshopTargetGroup
-On tab targets, click on "Register targets"
-Choose WorkshopWebserver instance 
-Make sure port is 80
-Click on "Include as pending below"
-Click on "Register pending targets"
-
-3 - Test the WorkshopLoadBalancer
-On the left menu, under "Load balancing" choose "Load Balancers"
-Choose WorkshopLoadBalancer
-Copy DNS name and paste it in a browser (use private mode)
-
-
-IV - Distribute website content through CloudFront
+III - Distribute website content through CloudFront
 
 1 - Create a CloudFront distribution with our S3 bucket as origin
 
@@ -184,6 +101,10 @@ Origin:
 - Origin domain: choose your S3 bucket endpoint
 - Name: s3-web-security-demo
 - Origin access: Public
+
+- Add custom header
+	+ Header name: Referer
+	+ Value: CLOUDFRONT-DISTRIBUTION-SECRET-VALUE
 
 Default cache behavior:
 - Viewer protocol policy: Redirect HTTP to HTTPS
@@ -213,7 +134,8 @@ Origin:
 - Name: web-security-demo-alb
 
 - Add custom header
-	+ Header name: x-cloudfront-secret  Value: 0123456789
+	+ Header name: x-cloudfront-secret
+	+ Value: CLOUDFRONT-DISTRIBUTION-SECRET-VALUE
 
 Default cache behavior:
 - Viewer protocol policy: Redirect HTTP to HTTPS
@@ -240,59 +162,35 @@ Paste S3 distribution domain name in a browser (private mode) and verify you hav
 Paste ALB distribution domain name in a browser (private mode) and verify you have access the website content.
 
 
-V - Block direct access from S3 website endpoint and WorkshopLoadBalancer DNS name
+IV - Block direct access from S3 website endpoint and WorkshopLoadBalancer DNS name
 
 1 - Block direct access from S3 website
 
-Go to your S3 distribution / Origins Tab
-
-Edit your origin:
-- Origin access: Origin access control settings (recommended)
-- Create new OAC
-	+ Name: Workshop-OAC
-	+ Signing behavior: Sign requests (recommended)
-	+ Click on "Create"
-
---> Click on "Copy policy" button inside the blue component. You'll need it to update your bucket policy.
-
-Scroll down and "Save changes"
-
-Next, go to S3 Console, and choose your bucket
-
+Go to S3 Console, and choose your bucket
 Go to tab "Permissions" and edit the bucket policy (replace the placeholders with appropriate data) if not done automatically by CloudFront
 
 {
-    "Version": "2012-10-17",
-    "Statement": {
-        "Sid": "PolicyForCloudFrontPrivateContent",
-        "Effect": "AllowCloudFrontServicePrincipal",
-        "Principal": {
-            "Service": "cloudfront.amazonaws.com"
-        },
-        "Action": "s3:GetObject",
-        "Resource": "arn:aws:s3:::<S3 bucket name>/*",
-        "Condition": {
-            "StringEquals": {
-                "AWS:SourceArn": "arn:aws:cloudfront::<AWS account ID>:distribution/<CloudFront distribution ID>"
-            }
-        }
+  "Version":"2012-10-17",
+  "Id":"HTTP GET requests from specific referer",
+  "Statement":[
+    {
+      "Sid":"AllowGetFromSpecificReferer",
+      "Effect":"Allow",
+      "Principal":"*",
+      "Action":["s3:GetObject","s3:GetObjectVersion"],
+      "Resource":"arn:aws:s3:::REPLACE_WITH_YOUR_BUCKET_NAME/*",
+      "Condition":{
+        "StringLike":{"aws:Referer":["CLOUDFRONT-DISTRIBUTION-SECRET-VALUE"]}
+      }
     }
+  ]
 }
 
-Edit "Block public access"
-Check all options
-Save changes
-Confirm
-
-Go to tab "Properties"
 Copy the provided S3 website URL and paste it in a browser (use private mode)
 Assert you get a 403 Forbidden - Access Denied message
 
-Edit static website hosting
-Disable
-Save changes
-
-Paste S3 distribution domain name in a browser (private mode) and verify you have access the website content.
+Paste S3 distribution domain name in a browser (private mode)
+Assert you have access the website content.
 
 2 - Block direct access from WorkshopLoadBalancer DNS name
 
@@ -328,7 +226,7 @@ Name and tags: AllowAccessFromCloudFront
 Click on Add condition
 - Rule condition types: HTTP header
 - HTTP header name: x-cloudfront-secret
-- HTTP header value: 0123456789
+- HTTP header value: CLOUDFRONT-DISTRIBUTION-SECRET-VALUE
 
 Click on "confirm"
 
@@ -345,32 +243,13 @@ Click on "Next"
 Click on "Create"
 
 Go back to WorkshopLoadBalancer
-Copy the DNS name and paste it in a browser (use private mode)
+Copy the provided DNS name and paste it in a browser (use private mode)
 Assert you get a 403 Forbidden - Access Denied message
 
-Go to CloudFront
-Edit your WorkshopLoadBalancer distribution
+Paste ALB distribution domain name in a browser (private mode)
+Assert you have access the website content.
 
-Copy the Distribution domain name and paste it in a browser (use private mode)
-Assert you get a 403 Forbidden - Access Denied message
-
-Go to tab "Origins"
-Choose and "Edit" your origin
-Scroll down to "Add custom header", click on Add header
-- Header name: x-cloudfront-secret  
-- Value: 0123456789
-
-Scroll down
-Save changes
-
-Wait for distribution to be redeployed
-
-3 - Test access from CloudFront distributions
-
-When both updated distributions are deployed, paste their domain names in a browser (in private mode)
-Assert access is still granted
-
-VI - Now let's take a look at some vulnerabilities
+V - Now let's take a look at some vulnerabilities
 
 1 - XSS
 
@@ -409,21 +288,6 @@ Scroll down and click on "Next"
 Click on "Next"
 Click on "Next"
 Review and click on "Create web ACL"
-
-- Apply the rule
-
-Go to CloudFront
-Choose the S3 distribution you created earlier
-Go to tab "Security"
-On "Security - Web Application Firewall (WAF)" component, click "Edit"
-Choose: "Enable security protections"
-Enable Use existing WAF configuration
-Choose "WorkshopWebACL"
-Save changes
-
-Repeat the same process for the ALB distribution you created earlier
-
-Wait till the both distribution are redeployed
 
 - Show the solution on both sites
 
@@ -616,7 +480,6 @@ Regular expressions: copy the following
 
 Click on "Create regex pattern set" 
 
-
 On left menu, under AWS WAF, click on "Web ACLs"
 Click on "WorkshopWebACL"
 On tab "Rules", choose "Add rules / Add my own rules and rule groups"
@@ -710,7 +573,7 @@ curl -s $TEST_URL;
 
 Expect: last curl request to be blocked
 
-VIII - Prevent access from restricted locations
+VI - Prevent access from restricted locations
 
 Go to CloudFront
 Select your S3 distribution
@@ -736,26 +599,25 @@ VII - Clean up
 06 - Disable your S3 distribution
 07 - Repeat steps 2 to 6 with your ALB distribution
 
+Do steps 08 to 13 only if you used web-security-at-edge-demo.yaml, otherwise goto step 14
+
 08 - Go to WAF
 09 - Go to Web ACLs
 10 - Choose WorkshopWebACL
 11 - Go to tab Rules
 12 - Delete all rules
-13 - Go to Regex pattern sets
-14 - Delete Workshop-HTML-Tags
+13 - Delete WorkshopWebACL
 
-15 - Go to S3
-16 - Select your bucket
-17 - Delete all objects from your bucket (you can click on "Empty" for that)
+14 - Go to CloudFormation
+15 - Delete your workshop stack
 
-18 - Go to CloudFormation
-19 - Delete your workshop stack
+16 - Go to WAF
+17 - Go to Regex pattern sets
+18 - Delete Workshop-HTML-Tags
 
-20 - Go to CloudFront
-21 - Select your S3 and ALB distributions
-22 - Delete both distributions
-23 - On the left menu, go to Security / Origin access
-24 - On tab Control settings, select and delete the Origin access control named Workshop-OAC
+19 - Go to CloudFront
+20 - Select your S3 and ALB distributions
+21 - Delete both distributions
 
 
 
