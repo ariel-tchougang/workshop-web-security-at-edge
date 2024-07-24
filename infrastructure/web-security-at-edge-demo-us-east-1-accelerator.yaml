@@ -544,7 +544,7 @@ Resources:
       Runtime: python3.12
       Timeout: 300
 
-  EmptyS3Bucket:
+  S3BucketCleanUpCustomResource:
     Type: 'Custom::EmptyS3Bucket'
     Properties:
       ServiceToken: !GetAtt S3BucketCleanUpLambda.Arn
