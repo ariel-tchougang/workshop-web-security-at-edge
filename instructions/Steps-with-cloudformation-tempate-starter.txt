@@ -23,19 +23,8 @@ To perform steps required for this demo, you'll need to:
 
 I - Initialize infrastructure
 
-Go to [GITHUB PROJECT URL] and download zip
+Have a look at the folder "infrastructure", it should have this tree structure:
 
-Unzip it in a folder on your local computer
-
-You should find this tree structure:
-web/
-	- styles/
-		- wafdemo.css
-	- header_attack.html
-	- htmli_attack.html
-	- index.html
-	- sqli_attack.html
-	- xss_attack.html
 infrastructure/
 	- web-security-at-edge-demo-us-east-1.yaml
 	- web-security-at-edge-demo.yaml
