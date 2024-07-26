@@ -417,16 +417,16 @@ Password: badpassword
 Assert access is denied
 - Type: 
 ```
-Username: admin' --
-Password: badpassword' OR '1=1
+Username: admin
+Password: anything' OR '1=1
 ```
 - Click on Login button
 
 Assert access is granted
 - Type: 
 ```
-Username: admin
-Password: badpassword' OR '1=1
+Username: admin' --
+Password: anything
 ```
 - Click on Login button
 
