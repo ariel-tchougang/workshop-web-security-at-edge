@@ -35,7 +35,7 @@ To perform steps required for this demo, you'll need to:
 
 Check the subfolder "infrastructure" to retrieve the CloudFormation template to start this workshop:
 
-- infrastructure/
+- infrastructure/cloudformation/
 	- web-security-at-edge-demo-us-east-1.yaml
 	- web-security-at-edge-demo.yaml
 
