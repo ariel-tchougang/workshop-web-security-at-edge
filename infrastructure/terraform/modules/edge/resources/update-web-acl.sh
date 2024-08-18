@@ -31,8 +31,11 @@ if [ -z "$LockToken" ]; then
     exit 1
 fi
 
+# Create the JSON string for --visibility-config
+visibilityConfig='{"SampledRequestsEnabled": true, "CloudWatchMetricsEnabled": true, "MetricName": "'"$WebAclMetricName"'"}'
+
 # Update the Web ACL
-aws wafv2 update-web-acl --name "$WebAclName" --scope CLOUDFRONT --region us-east-1 --id "$WebAclId" --lock-token "$LockToken" --default-action '{"Allow": {}}' --visibility-config '{"SampledRequestsEnabled": true, "CloudWatchMetricsEnabled": true, "MetricName": "$WebAclMetricName"}' --rules '[]' --profile "$AwsProfile"
+aws wafv2 update-web-acl --name "$WebAclName" --scope CLOUDFRONT --region us-east-1 --id "$WebAclId" --lock-token "$LockToken" --default-action '{"Allow": {}}' --visibility-config "$visibilityConfig" --rules '[]' --profile "$AwsProfile"
 
 # Check if the update was successful
 if [ $? -ne 0 ]; then
