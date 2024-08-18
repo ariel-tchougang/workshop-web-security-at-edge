@@ -3,12 +3,13 @@ resource "aws_s3_bucket" "workshop_s3_bucket" {
   # force_destroy = true
 
   tags = {
-    Name = join("-", ["workshop-edge-protection-s3-bucket", var.suffix])
+    Name    = join("-", ["workshop-edge-protection-s3-bucket", var.suffix])
+    Profile = var.aws_local_profile
   }
 
   provisioner "local-exec" {
     command = <<EOT
-      aws s3 rm s3://${self.bucket} --recursive
+      aws s3 rm s3://${self.bucket} --recursive --profile ${self.tags.Profile}
     EOT
     when    = destroy
   }

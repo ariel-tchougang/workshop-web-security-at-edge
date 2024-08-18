@@ -4,6 +4,12 @@ variable "region" {
   default     = "us-east-1"
 }
 
+variable "aws_local_profile" {
+  description = "AWS local exec profile"
+  type        = string
+  default     = "terraform-role"
+}
+
 variable "vpc_cidr" {
   description = "VPC CIDR"
   type        = string
@@ -14,13 +20,3 @@ variable "vpc_cidr" {
     error_message = "The CIDR block must be in a valid format (e.g., 10.0.0.0/16)."
   }
 }
-
-/* variable "vpc_id" {
-  description = "VPC ID"
-  type        = string
-}
-
-variable "subnet_ids" {
-  description = "List of subnet IDs"
-  type        = list(string)
-} */

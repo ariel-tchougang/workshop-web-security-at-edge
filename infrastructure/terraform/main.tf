@@ -22,7 +22,8 @@ module "edge" {
     aws = aws.us_east_1
   }
 
-  suffix = random_string.random.result
+  aws_local_profile = var.aws_local_profile
+  suffix            = random_string.random.result
 }
 
 module "s3" {
@@ -31,8 +32,9 @@ module "s3" {
     aws = aws.var_region
   }
 
-  region = var.region
-  suffix = random_string.random.result
+  region            = var.region
+  aws_local_profile = var.aws_local_profile
+  suffix            = random_string.random.result
 }
 
 /* module "compute" {

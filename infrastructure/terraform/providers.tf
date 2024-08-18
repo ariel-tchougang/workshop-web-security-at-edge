@@ -10,16 +10,16 @@ terraform {
 }
 
 provider "aws" {
-  alias = "var_region"
-  region = var.region
+  alias                    = "var_region"
+  region                   = var.region
   shared_config_files      = ["~/.aws/config"]
   shared_credentials_files = ["~/.aws/credentials"]
-  profile                  = "terraform-role"
+  profile                  = var.aws_local_profile
 }
 
 provider "aws" {
-  alias  = "us_east_1"
-  region = "us-east-1"
+  alias                    = "us_east_1"
+  region                   = "us-east-1"
   shared_config_files      = ["~/.aws/config"]
   shared_credentials_files = ["~/.aws/credentials"]
   profile                  = "terraform-role"
