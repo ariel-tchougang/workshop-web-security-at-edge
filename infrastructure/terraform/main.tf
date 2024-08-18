@@ -24,6 +24,7 @@ module "edge" {
 
   aws_local_profile = var.aws_local_profile
   suffix            = random_string.random.result
+  exec_platform     = var.exec_platform
 }
 
 module "s3" {

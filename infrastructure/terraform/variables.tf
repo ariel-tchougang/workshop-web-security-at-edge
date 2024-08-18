@@ -10,6 +10,18 @@ variable "aws_local_profile" {
   default     = "terraform-role"
 }
 
+variable "exec_platform" {
+  description = "Execution platform"
+  type        = string
+  default     = "linux"
+
+  validation {
+    condition     = contains(["linux", "windows", "macos"], lower(var.exec_platform))
+    error_message = "Execution platform must be 'linux', 'windows', or 'macos'."
+  }
+}
+
+
 variable "vpc_cidr" {
   description = "VPC CIDR"
   type        = string

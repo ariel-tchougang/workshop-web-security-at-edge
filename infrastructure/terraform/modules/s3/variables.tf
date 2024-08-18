@@ -15,8 +15,6 @@ variable "suffix" {
   default     = "workshop"
 }
 
-# Define other variables if needed
-
 
 
 
