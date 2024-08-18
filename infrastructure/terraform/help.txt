@@ -1,0 +1,51 @@
+terraform plan \
+  -var="region=eu-west-3" \
+  -var="vpc_cidr=10.128.0.0/16" \
+  -var="aws_local_profile=default" \
+  -var="exec_platform=linux"
+  
+terraform plan -var="region=eu-west-3" -var="vpc_cidr=10.127.0.0/16" -var="aws_local_profile=default" -var="exec_platform=linux"
+
+terraform plan \
+  -var="region=eu-west-3" \
+  -var="vpc_cidr=10.128.0.0/16" \
+  -var="aws_local_profile=default" \
+  -var="exec_platform=windows"
+  
+terraform plan -var="region=eu-west-3" -var="vpc_cidr=10.127.0.0/16" -var="aws_local_profile=default" -var="exec_platform=windows"
+
+terraform apply \
+  -var="region=eu-west-3" \
+  -var="vpc_cidr=10.128.0.0/16" \
+  -var="aws_local_profile=default" \
+  -var="exec_platform=linux" \
+  -auto-approve
+  
+terraform apply -var="region=eu-west-3" -var="vpc_cidr=10.127.0.0/16" -var="aws_local_profile=default" -var="exec_platform=linux" -auto-approve
+
+terraform apply \
+  -var="region=eu-west-3" \
+  -var="vpc_cidr=10.128.0.0/16" \
+  -var="aws_local_profile=default" \
+  -var="exec_platform=windows" \
+  -auto-approve
+  
+terraform apply -var="region=eu-west-3" -var="vpc_cidr=10.127.0.0/16" -var="aws_local_profile=default" -var="exec_platform=windows" -auto-approve
+
+terraform destroy \
+  -var="region=eu-west-3" \
+  -var="vpc_cidr=10.128.0.0/16" \
+  -var="aws_local_profile=default" \
+  -var="exec_platform=linux" \
+  -auto-approve
+  
+terraform destroy -var="region=eu-west-3" -var="vpc_cidr=10.127.0.0/16" -var="aws_local_profile=default" -var="exec_platform=linux" -auto-approve
+
+terraform destroy \
+  -var="region=eu-west-3" \
+  -var="vpc_cidr=10.128.0.0/16" \
+  -var="aws_local_profile=default" \
+  -var="exec_platform=windows" \
+  -auto-approve
+  
+terraform destroy -var="region=eu-west-3" -var="vpc_cidr=10.128.0.0/16" -var="aws_local_profile=default" -var="exec_platform=windows" -auto-approve
