@@ -15,7 +15,7 @@ terraform {
 }
 
 provider "aws" {
-  alias                    = "var_region"
+  alias                    = "deployment_region"
   region                   = var.region
   shared_config_files      = ["~/.aws/config"]
   shared_credentials_files = ["~/.aws/credentials"]
@@ -23,7 +23,7 @@ provider "aws" {
 }
 
 provider "aws" {
-  alias                    = "us_east_1"
+  alias                    = "us_east_1_region"
   region                   = "us-east-1"
   shared_config_files      = ["~/.aws/config"]
   shared_credentials_files = ["~/.aws/credentials"]

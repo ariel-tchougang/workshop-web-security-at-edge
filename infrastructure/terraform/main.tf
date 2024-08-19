@@ -8,7 +8,7 @@ resource "random_string" "random" {
 module "networking" {
   source = "./modules/networking"
   providers = {
-    aws = aws.var_region
+    aws = aws.deployment_region
   }
 
   region   = var.region
@@ -19,7 +19,7 @@ module "networking" {
 module "edge" {
   source = "./modules/edge"
   providers = {
-    aws = aws.us_east_1
+    aws = aws.us_east_1_region
   }
 
   aws_local_profile = var.aws_local_profile
@@ -30,7 +30,7 @@ module "edge" {
 module "s3" {
   source = "./modules/s3"
   providers = {
-    aws = aws.var_region
+    aws = aws.deployment_region
   }
 
   region            = var.region
@@ -41,7 +41,7 @@ module "s3" {
 module "compute" {
   source = "./modules/compute"
   providers = {
-    aws = aws.var_region
+    aws = aws.deployment_region
     tls = tls
   }
 
