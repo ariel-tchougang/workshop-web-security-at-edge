@@ -1,6 +1,5 @@
 resource "aws_s3_bucket" "workshop_s3_bucket" {
   bucket = join("-", ["workshop-edge-protection-s3-bucket", var.suffix])
-  # force_destroy = true
 
   tags = {
     Name    = join("-", ["workshop-edge-protection-s3-bucket", var.suffix])

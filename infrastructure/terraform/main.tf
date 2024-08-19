@@ -38,13 +38,23 @@ module "s3" {
   suffix            = random_string.random.result
 }
 
-/* module "compute" {
+module "compute" {
   source = "./modules/compute"
   providers = {
-    aws = aws
+    aws = aws.var_region
+    tls = tls
   }
 
-  vpc_id     = module.networking.vpc_id
-  subnet_ids = module.networking.subnet_ids
+  region                     = var.region
+  s3_bucket_arn              = module.s3.workshop_s3_bucket_arn
+  s3_bucket_name             = module.s3.workshop_s3_bucket_name
+  vpc_id                     = module.networking.vpc_id
+  subnet_ids                 = module.networking.subnet_ids
+  alb_security_group         = module.networking.external_http_sg
+  workshop_zip_file_location = var.workshop_zip_file_location
+  webserver_security_groups  = [module.networking.ssh_from_instance_connect_sg, module.networking.internal_vpc_http_sg]
+  nat_gateway_id             = module.networking.workshop_nat_gateway_id
+  ec2_instance_connect_id    = module.networking.ec2_instance_connect_id
+  suffix                     = random_string.random.result
 }
-*/
+

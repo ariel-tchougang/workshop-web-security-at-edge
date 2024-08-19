@@ -3,4 +3,12 @@ output "workshop_s3_bucket_website_url" {
   value       = aws_s3_bucket_website_configuration.workshop.website_endpoint
 }
 
-# Add other outputs here if needed
+output "workshop_s3_bucket_arn" {
+  description = "S3 Bucket ARN"
+  value       = aws_s3_bucket.workshop_s3_bucket.arn
+}
+
+output "workshop_s3_bucket_name" {
+  description = "S3 Bucket name"
+  value       = aws_s3_bucket.workshop_s3_bucket.bucket
+}
