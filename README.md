@@ -33,13 +33,15 @@ To perform steps required for this demo, you'll need to:
 
 ## I - Initialize infrastructure
 
-Check the subfolder "infrastructure" to retrieve the CloudFormation template to start this workshop:
+### 1 - With CloudFormation
+
+Check the subfolder "infrastructure/cloudformation" to retrieve the CloudFormation template to start this workshop:
 
 - infrastructure/cloudformation/
 	- web-security-at-edge-demo-us-east-1.yaml
 	- web-security-at-edge-demo.yaml
 
-### 1 - Install workshop CloudFormation resources
+#### a - Install workshop CloudFormation resources
 
 If you're performing the demo in us-east-1 region run "web-security-at-edge-demo-us-east-1.yaml", you'll get the complete setup.
 
@@ -62,7 +64,7 @@ It should take around 10 minutes to provision all resources.
 
 If you used web-security-at-edge-demo.yaml, go to step 2. Otherwise go directly to part II.
 
-### 2 - Create an empty Global WebACL (Optional)
+#### b - Create an empty Global WebACL (Optional)
 
 Go to WAF (Web Application Firewall console)
 Click on "Create web ACL"
@@ -76,6 +78,33 @@ Web ACL details:
 - Click on "Create web ACL"
 
 ![Alt text](/images/WAF-Create-WebACL.png?raw=true "WAF-Create-WebACL")
+
+### 2 - With Terraform
+
+Check the subfolder "infrastructure/cloudformation"
+- It's assumed Terraform is installed on you plaform
+- These scripts were written using Terraform 1.9.3
+
+#### a - Initialize Terraform
+
+```HCL
+terraform init
+```
+
+#### b - Execution variables
+- region: AWS deployment region
+- vpc_cidr: Workshop VPC CIDR
+- aws_local_profile: aws profile with permissions necessary for this workshop. You can set it in your ~/.aws/config & ~/.aws/credentials files.
+- exec_platform: operating system from which you'll be running the workshop. Values are:
+    - linux
+    - windows
+    - macos
+
+#### - c Install workshop resources
+
+```HCL
+terraform apply -auto-approve -var="region=YOUR_AWS_REGION" -var="vpc_cidr=YOUR_VPC_CIDR" -var="aws_local_profile=YOUR_LOCAL_AWS_PROFILE" -var="exec_platform=YOUR_OPERATING_SYSTEM"
+```
 
 ## II - Test the application
 
@@ -830,12 +859,22 @@ curl -s $TEST_URL;
 - 12 - Delete all rules
 - 13 - Delete WorkshopWebACL
 
-### CloudFormation:  
+### IAC clean up
+
+#### With CloudFormation:  
 
 - 14 - Go to CloudFormation
 - 15 - Delete your workshop stack 
 
-### WAF final clean up
+#### With Terraform: 
+
+- 14 - Destroy resources
+```HCL
+terraform destroy -auto-approve -var="region=YOUR_AWS_REGION" -var="vpc_cidr=YOUR_VPC_CIDR" -var="aws_local_profile=YOUR_LOCAL_AWS_PROFILE" -var="exec_platform=YOUR_OPERATING_SYSTEM"
+```
+- 15 - Go to [WAF final clean up](#waf-final-cleanup)
+
+### WAF final clean up <a name="waf-final-cleanup"></a>
 
 - 16 - Go Rule groups
 - 17 - Delete all Workshop-Block*-Group
