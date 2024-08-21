@@ -207,7 +207,7 @@ Paste ALB distribution domain name in a browser (private mode) and verify you ha
 
 ## IV - Block direct access from S3 website endpoint and WorkshopLoadBalancer DNS name
 
-![Alt text](/images/block-public-access.webp?raw=true "block-public-access")##
+![Alt text](/images/block-public-access.webp?raw=true "block-public-access")
 
 ### 1 - Block direct access from S3 website
 
